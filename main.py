@@ -32,9 +32,9 @@ def main():
     parser.add_argument("-AutoDelete", "--file_auto_delete", default=True,
         help="Whether delete the unnecessary files automatically")
     parser.add_argument("-HWdes", "--hardware_description", default=SimConfig_path,
-        help="Hardware description file location & name, default:/MNSIM_Python/SimConfig.ini")
+        help="Hardware description file location & name, default:/home/dmz/MNSIM_Python/SimConfig.ini")
     parser.add_argument("-Weights", "--weights", default=weights_file_path,
-        help="NN model weights file location & name, default:/MNSIM_Python/cifar10_vgg8_params.pth")
+        help="NN model weights file location & name, default:/home/dmz/MNSIM_Python/cifar10_vgg8_params.pth")
     parser.add_argument("-NN", "--NN", default='vgg8',
         help="NN model description (name), default: vgg8")
     parser.add_argument("-DisHW", "--disable_hardware_modeling", action='store_true', default=False,

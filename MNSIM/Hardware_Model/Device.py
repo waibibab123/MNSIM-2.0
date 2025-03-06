@@ -71,7 +71,7 @@ class device(object):
 	def calculate_device_write_power(self, R = None, V = None):
 		# only used for NVM
 		# R is the resistance of memristor, None means use default resistance (Sqrt(R_on*R_off))
-		assert self.type == "NVM", "only the NVM device write power needs to be calculated"
+		assert self.device_type == "NVM", "only the NVM device write power needs to be calculated"
 		if R is None:
 			R = math.sqrt(float(self.device_resistance[0])*float(self.device_resistance[-1]))
 		assert R > 0, "Resistance <= 0"

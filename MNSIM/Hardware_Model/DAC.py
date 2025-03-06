@@ -97,16 +97,3 @@ class DAC(object):
 		print("DAC_energy:", self.DAC_energy, "nJ")
 		print("DAC_latency:", self.DAC_latency, "ns")
 	
-def DAC_test():
-	print("load file:",test_SimConfig_path)
-	_DAC = DAC(test_SimConfig_path)
-	_DAC.calculate_DAC_area()
-	_DAC.calculate_DAC_power()
-	_DAC.calculate_DAC_sample_rate()
-	_DAC.calculate_DAC_latency()
-	_DAC.calculate_DAC_energy()
-	_DAC.DAC_output()
-
-
-if __name__ == '__main__':
-	DAC_test()

@@ -66,7 +66,9 @@ if __name__ == '__main__':
     structure_file = __TestInterface.get_structure()
     weight = __TestInterface.get_net_bits()
     weight_2 = weight_update(SimConfig_path, weight, is_Variation=0,is_SAF=1,is_Rratio=0)
-    weight = __TestInterface.get_net_bits()
+    print(type(weight), "\n", np.array(weight).shape, type(weight[0]), len(weight[0]), weight[0].keys())
+    # print(type(weight_2), "\n", np.array(weight_2).shape, weight[0])  
+    # weight = __TestInterface.get_net_bits()
     # print(__TestInterface.set_net_bits_evaluate(weight_2))
 
 

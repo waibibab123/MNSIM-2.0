@@ -279,13 +279,13 @@ class QuantizeLayer(nn.Module):
     #calculate_equal_bit:CNNParted Interfaces
     def calculate_equal_bit(self):
         #R:active Rows
-        if layer_config['type']=='conv':
+        if self.layer_config['type']=='conv':
             k=self.layer_config['kernel_size']
             Cin=self.layer_config['in_channels']
             R=self.hardware_config['DAC_num']
             Padc=self.hardware_config['ADC_quantize_bit']
             Pout_equal=int(max(math.log2(k**2*Cin/R),0))+Padc
-        elif layer_config['type']=='fc':
+        elif self.layer_config['type']=='fc':
             inputchannel=self.layer_config['in_features']
             R=self.hardware_config['DAC_num']
             Pout_equal=int(max(math.log2(inputchannel/R),0))+Padc

@@ -16,12 +16,12 @@ class crossbar_accuracy():
         #SimConfig_path = os.path.abspath(os.path.join(os.getcwd(),'..','SimConfig',SimConfig_path))
         self.SimConfig_path = SimConfig_path
         xbar = crossbar(SimConfig_path)
-        print("Hardware config file is loaded:", SimConfig_path)
+        # print("Hardware config file is loaded:", SimConfig_path)
         ca_config = cp.ConfigParser()
         ca_config.read(SimConfig_path, encoding='UTF-8')
-        self.SAF = list(map(int, ca_config.get('Device level', 'Device_SAF').split(',')))
+        self.SAF = list(map(float, ca_config.get('Device level', 'Device_SAF').split(',')))
         self.read_voltage = xbar.device_read_voltage
-        print(self.read_voltage)
+        # print(self.read_voltage)
         # print(self.SAF)
         self.Load_Resistance = int(ca_config.get('Crossbar level', 'Load_Resistance'))  # TODO : change in crossbar.py
         if self.Load_Resistance == -1:
@@ -33,13 +33,13 @@ class crossbar_accuracy():
         #     self.wire_conduction = 1/self.standard_wire_resistance
         self.cell_type = xbar.cell_type
         self.standard_cell_resistance = xbar.device_resistance
-        self.device_bit_level = xbar.device_bit_level
+        self.device_bit_level = xbar.device_level
         self.decice_variation = xbar.decice_variation
         self.real_matrix = []
         self.row = 0
         self.column = 0
-        print(self.row)
-        print(self.column)
+        # print(self.row)
+        # print(self.column)
         self.enable_matrix = []
 
     def SAF_effect(self):
@@ -65,7 +65,7 @@ class crossbar_accuracy():
         self.column = len(read_matrix[0])
         self.row = len(read_matrix)
         self.SAF_effect()
-        print(read_matrix)
+        # print(read_matrix)
         for i in range(self.row):
             temp = []
             for j in range(self.column):
@@ -88,7 +88,7 @@ class crossbar_accuracy():
             voltage = 0
             for i in range(self.row):
                 temp_voltage = self.read_voltage[read_vector[i]]
-                print(temp_voltage)
+                # print(temp_voltage)
                 voltage += temp_voltage * self.Load_Resistance / (self.Load_Resistance + 1/self.real_matrix[i][j])
             self.real_vector.append(voltage)
 
