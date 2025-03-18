@@ -39,7 +39,7 @@ class ProcessElement(crossbar, DAC, ADC):
 			assert __xbar_polarity == 2, "Crossbar polarity must be 1 or 2"
 			self.PE_multiplex_xbar_num = [1,2]
 			self.sub_position = int(PE_config.get('Process element level', 'Sub_Position'))
-		self.group_num = int(PE_config.get('Process element level', 'Group_Num'))
+		self.group_num = int(PE_config.get('Process element level', 'Group_Num')) # 交叉条组数，默认为1
 		if self.group_num == 0:
 			self.group_num = 1
 		self.num_occupied_group = 0

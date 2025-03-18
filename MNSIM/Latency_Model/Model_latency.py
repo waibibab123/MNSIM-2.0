@@ -66,17 +66,17 @@ def inoutsize_conversion(kernelsize, padding, stride, outputsize):
 class Model_latency():
     def __init__(self, NetStruct, SimConfig_path, multiple=None, TCG_mapping=None):
         modelL_config = cp.ConfigParser()
-        modelL_config.read(SimConfig_path, encoding='UTF-8')
-        NoC_Compute = int(modelL_config.get('Algorithm Configuration', 'NoC_enable'))
-        self.inter_tile_bandwidth = float(modelL_config.get('Tile level', 'Inter_Tile_Bandwidth'))
-        self.NetStruct = NetStruct
+        modelL_config.read(SimConfig_path, encoding='UTF-8') # 硬件配置信息
+        NoC_Compute = int(modelL_config.get('Algorithm Configuration', 'NoC_enable')) # 默认为0: not call booksim to simulate the NoC part
+        self.inter_tile_bandwidth = float(modelL_config.get('Tile level', 'Inter_Tile_Bandwidth'))# 默认为20，单位：Gbps
+        self.NetStruct = NetStruct # interface.py的get_structure函数返回的结果
         if multiple is None:
-            multiple = [1] * len(self.NetStruct)
+            multiple = [1] * len(self.NetStruct) # len(self.NetStruct)：量化层层数
         if TCG_mapping is None:
             TCG_mapping = TCG(NetStruct, SimConfig_path, multiple)
-        self.graph = TCG_mapping
-        self.graph.mapping_net()
-        self.graph.calculate_transfer_distance()
+        self.graph = TCG_mapping # TCG类组织的映射结果
+        self.graph.mapping_net() # 将不同的层映射到不同的tile上
+        self.graph.calculate_transfer_distance() # 计算层间层内传输距离
         self.begin_time = []
         self.finish_time = []
         self.layer_tile_latency = []
@@ -849,28 +849,33 @@ class Model_latency():
         self.tile_merge_latency.append([])
         self.tile_transfer_latency.append([])
 
-    def calculate_model_latency(self, mode=0):
+    def calculate_model_latency(self, mode=0): # MNSIM默认mode = 1
         '''
         merge the latency_0 and latency_1
         :param mode: 0: fill in input data row by row, 1: fill in input data kerlenl size by kernel size (column direction)
         :return:
         '''
-        for layer_id in range(len(self.NetStruct)):
-            layer_dict = self.NetStruct[layer_id][0][0]
+        for layer_id in range(len(self.NetStruct)): # 遍历每一个量化层
+            layer_dict = self.NetStruct[layer_id][0][0] # 当前层的配置信息字典
             if layer_id == 0:
-                # for the first layer, first layer must be conv layer
-                self.layer_latency_initial()
-                output_size = list(map(int, layer_dict['Outputsize']))
-                input_size = list(map(int, layer_dict['Inputsize']))
+                # for the first layer, first layer must be conv layer  第一层，必然是卷积层
+                self.layer_latency_initial() # 初始化当前层的各层时延列表
+                output_size = list(map(int, layer_dict['Outputsize'])) #二个元素，分别代表高、宽
+                input_size = list(map(int, layer_dict['Inputsize'])) #二个元素，分别代表高、宽
                 kernelsize = int(layer_dict['Kernelsize'])
                 stride = int(layer_dict['Stride'])
-                inputchannel = int(layer_dict['Inputchannel'])
-                outputchannel = int(layer_dict['Outputchannel'])
+                inputchannel = int(layer_dict['Inputchannel'])  # 当前层的输入通道总数
+                outputchannel = int(layer_dict['Outputchannel']) # 当前层的输出通道总数
                 padding = int(layer_dict['Padding'])
-                inputbit = int(layer_dict['Inputbit'])
-                outputbit = int(layer_dict['outputbit'])
-                input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2)
-                # the input channel number each PE processes
+                inputbit = int(layer_dict['Inputbit'])  # 默认：9
+                outputbit = int(layer_dict['outputbit'])  # 默认：9
+                input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2) # 在每个输入周期一个PE需要处理的通道数
+                # the input channel number each PE processes 
+                # read_row：单次计算激活的字线
+                # read_column：单次计算激活的位线
+                # self.graph.max_inbuf_size为一个pe的输入缓存
+                # self.graph.max.outbuf_size为一个tile的输出缓存
+                # self.graph.layer_tileinfo[layer_id]['max_PE']:当前tile使用的pe数和一个tile总共的pe数的最小值
                 temp_tile_latency = tile_latency_analysis(SimConfig_path=self.SimConfig_path,
                                                           read_row=self.graph.layer_tileinfo[layer_id]['max_row'],
                                                           read_column=self.graph.layer_tileinfo[layer_id]['max_column'],
@@ -878,10 +883,12 @@ class Model_latency():
                                                           PE_num=self.graph.layer_tileinfo[layer_id]['max_PE'],
                                                           default_inbuf_size=self.graph.max_inbuf_size,
                                                           default_outbuf_size=self.graph.max_outbuf_size
-                                                          )
+                                                          ) 
+                # 此处，outputbit=inputbit，因为每个cell上存储一位权重
                 temp_tile_latency.outbuf.calculate_buf_read_latency(rdata = (self.graph.layer_tileinfo[layer_id]['max_column']*
                                                                              outputbit*self.graph.layer_tileinfo[layer_id]['max_PE']/8))
                 temp_tile_latency.tile_buf_rlatency = temp_tile_latency.outbuf.buf_rlatency
+                # 合并时间
                 merge_time = temp_tile_latency.tile_buf_rlatency+self.graph.inLayer_distance[0][layer_id] * \
                              (temp_tile_latency.digital_period +self.graph.layer_tileinfo[layer_id]['max_column'] *
                               self.graph.layer_tileinfo[layer_id]['max_PE'] * outputbit / self.inter_tile_bandwidth)
@@ -890,15 +897,15 @@ class Model_latency():
                         outputchannel * outputbit / self.inter_tile_bandwidth)
 
                 cur_multiple = self.multiple[layer_id]
-                split_size = Split_map(padding=padding, outputsize=output_size[1], multiple=cur_multiple)
+                split_size = Split_map(padding=padding, outputsize=output_size[1], multiple=cur_multiple) # cur_multiple=1时，返回[output_size[1]]
                 self.layer_split.append(split_size)
                 max_time = [0] * cur_multiple
                 # Todo: update transfer data volume
-                for i in range(output_size[0]):
-                    for m in range(cur_multiple):
-                        for j in range(split_size[m]):
-                            self.pre_max_time = max_time[m]
-                            if (i == 0) & (j == 0):
+                for i in range(output_size[0]):   # 遍历输出特征图的高
+                    for m in range(cur_multiple): # 默认情况下m只能为0，遍历一次
+                        for j in range(split_size[m]): # 默认情况下j从0遍历到output_size[1]-1（输出特征图的宽）
+                            self.pre_max_time = max_time[m] 
+                            if (i == 0) & (j == 0):  # 输出特征图的第一个值
                                 # the first output
                                 if mode == 0:
                                     if cur_multiple == 1:
@@ -921,20 +928,21 @@ class Model_latency():
                                                                      kernelsize) * inputbit / 8
                                 else:
                                     if cur_multiple == 1:
-                                        indata = input_channel_PE * (max(kernelsize - padding, 0)**2) * inputbit / 8
+                                        # 仅考虑了一个xbar上面的输入缓冲内存
+                                        indata = input_channel_PE * (max(kernelsize - padding, 0)**2) * inputbit / 8   # 默认情况下，运行，indata单位为：B，PE一次输入的数据
                                     elif m == 0:
                                         indata = input_channel_PE * (max(kernelsize - padding, 0)**2) * inputbit / 8
                                     else:
                                         indata = input_channel_PE * (max(kernelsize-padding,0)*kernelsize) * inputbit / 8                  
                                 # fill the line buffer
-                                rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8
+                                rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8   # 输入寄存器的容量（输入缓冲区-->输入寄存器）
                                 temp_tile_latency.update_tile_latency(indata=indata, rdata=rdata)
                                 compute_time = temp_tile_latency.tile_latency + merge_time + transfer_time
                                 begin_time = 0
                                 self.pipe_result_update(layer_type='conv', begin_time=begin_time, compute_time=compute_time, layer_id=layer_id,
-                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time)
+                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time) #更新时延结果
                                 max_time[m] = compute_time
-                            elif j == 0:
+                            elif j == 0:   # 输出特征图的第一列
                                 if mode == 0:
                                     if cur_multiple == 1:
                                         indata = input_channel_PE * (input_size[1]*(stride-1)+max(kernelsize-padding,0)) * inputbit / 8
@@ -952,18 +960,18 @@ class Model_latency():
                                         indata = input_channel_PE * (temp_insize * (stride-1) + kernelsize) * inputbit / 8
                                 else:
                                     if cur_multiple == 1:
-                                        indata = input_channel_PE * stride * max(kernelsize-padding,0) * inputbit / 8
+                                        indata = input_channel_PE * stride * max(kernelsize-padding,0) * inputbit / 8    # 默认运行：一次只需要再多增加一行（卷积核往下移动一行）
                                     elif m == 0:
                                         indata = input_channel_PE * stride * max(kernelsize-padding,0) * inputbit /8
                                     else:
                                         indata = input_channel_PE * stride * kernelsize * inputbit / 8
-                                rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8
+                                rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8  # 输入寄存器
                                 temp_tile_latency.update_tile_latency(indata=indata, rdata=rdata)
                                 # TODO: Check
                                 begin_time = self.pre_max_time
                                 compute_time = temp_tile_latency.tile_latency + merge_time + transfer_time + begin_time
                                 self.pipe_result_update(layer_type='conv', begin_time=begin_time, compute_time=compute_time, layer_id=layer_id,
-                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time)
+                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time) # 更新时延结果
                                 max_time[m] = compute_time
                             else:
                                 # ignore the last several columns with padding
@@ -971,32 +979,32 @@ class Model_latency():
                                     indata = input_channel_PE * stride * inputbit /8
                                 else:
                                     if i == 0:
-                                        indata = input_channel_PE * stride * kernelsize * inputbit / 8
+                                        indata = input_channel_PE * stride * kernelsize * inputbit / 8 # 第一行：一次只需要再多增加一列（卷积核往右移动一列）
                                     else:
-                                        indata = input_channel_PE * stride **2 * inputbit / 8
+                                        indata = input_channel_PE * stride **2 * inputbit / 8  # 其它行：一次只需要再多增加一个输入特征图的元素（其它已经在之前被放入输入缓冲区）
                                 rdata = stride * kernelsize * input_channel_PE * inputbit / 8
                                 temp_tile_latency.update_tile_latency(indata=indata, rdata=rdata)
                                 begin_time = self.pre_max_time
                                 compute_time = temp_tile_latency.tile_latency + merge_time + transfer_time + begin_time
                                 self.pipe_result_update(layer_type='conv', begin_time=begin_time, compute_time=compute_time, layer_id=layer_id,
-                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time)
+                                                        temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time) # 更新时延结果
                                 max_time[m] = compute_time
-            else:
+            else:  # 第二层往后的层
                 if layer_dict['type'] == 'conv':
-                    self.layer_latency_initial()
-                    output_size = list(map(int, layer_dict['Outputsize']))
-                    input_size = list(map(int, layer_dict['Inputsize']))
+                    self.layer_latency_initial() # 初始化当前层的各时延列表
+                    output_size = list(map(int, layer_dict['Outputsize'])) # 输出尺寸，二维列表
+                    input_size = list(map(int, layer_dict['Inputsize'])) # 输入尺寸，二维列表
                     kernelsize = int(layer_dict['Kernelsize'])
                     stride = int(layer_dict['Stride'])
-                    inputchannel = int(layer_dict['Inputchannel'])
-                    outputchannel = int(layer_dict['Outputchannel'])
+                    inputchannel = int(layer_dict['Inputchannel']) # 当前层的总输入通道数
+                    outputchannel = int(layer_dict['Outputchannel']) # 当前层的总输出通道数
                     padding = int(layer_dict['Padding'])
                     inputbit = int(layer_dict['Inputbit'])
                     outputbit = int(layer_dict['outputbit'])
                     Inputindex_list = list(map(int, layer_dict['Inputindex']))
                     inputindex = Inputindex_list[0]
-                    input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2)
-                    # the input channel number each PE processes
+                    input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2)  
+                    # the input channel number each PE processes 在每个输入周期中一个PE需要处理的通道数
                     temp_tile_latency = tile_latency_analysis(SimConfig_path=self.SimConfig_path,
                                                               read_row=self.graph.layer_tileinfo[layer_id]['max_row'],
                                                               read_column=self.graph.layer_tileinfo[layer_id][
@@ -1015,16 +1023,17 @@ class Model_latency():
                     # Todo: update merge time (adder tree) and transfer data volume
                     transfer_time = self.graph.transLayer_distance[0][layer_id] * (outputchannel * outputbit / self.inter_tile_bandwidth)
                     ''' get the multiple for the conv layer '''
-                    cur_multiple = self.multiple[layer_id]
-                    split_size = Split_map(padding=padding, outputsize=output_size[1], multiple=cur_multiple)
+                    cur_multiple = self.multiple[layer_id] # 默认全1
+                    split_size = Split_map(padding=padding, outputsize=output_size[1], multiple=cur_multiple) # cur_multiple=1时，返回[output_size[1]]
                     self.layer_split.append(split_size)
                     max_time = [0] * cur_multiple
                    
-                    for i in range(output_size[0]):
+                    for i in range(output_size[0]):  # 遍历输出特征图的高
                         for m in range(cur_multiple):
-                            for j in range(split_size[m]):
+                            for j in range(split_size[m]):  # 遍历输出特征图的宽
                                 self.pre_max_time = max_time[m]
                                 if kernelsize > 1:
+                                    # 输出特征图的当前位置对应于输入特征图的位置
                                     last_layer_pos = (min(max(kernelsize-padding,1) + stride * i, input_size[0]) - 1) * \
                                                  input_size[1] + min(max(kernelsize-padding,1) + stride * j, input_size[1]) - 1
                                     
@@ -1055,6 +1064,8 @@ class Model_latency():
                                                         kernelsize) * inputbit / 8
                                     else:
                                         if cur_multiple == 1:
+                                            # 默认运行
+                                            # PE一次输入的数据，把这部分数据放入PE输入缓冲区中
                                             indata = input_channel_PE * (
                                                         max(kernelsize - padding, 0) ** 2) * inputbit / 8
                                         elif m == 0:
@@ -1063,7 +1074,7 @@ class Model_latency():
                                         else:
                                             indata = input_channel_PE * (
                                                         max(kernelsize - padding, 0) * kernelsize) * inputbit / 8
-                                    rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8
+                                    rdata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8 # 输入寄存器的容量（输入缓冲区-->输入寄存器）
                                     temp_tile_latency.update_tile_latency(indata=indata, rdata=rdata)
                                     temp_Inputindex = self.graph.layer_tileinfo[layer_id]['Inputindex']
                                     max_prelayer_time = 0
@@ -1077,14 +1088,14 @@ class Model_latency():
                                             tmp_time = self.finish_time[layer_id + idx][updated_last_layer_pos]
                                         if tmp_time > max_prelayer_time:
                                             max_prelayer_time = tmp_time
-                                    begin_time = max(max_prelayer_time, self.pre_max_time)
+                                    begin_time = max(max_prelayer_time, self.pre_max_time)#找到上一层最晚结束时间，也就是该层的开始时间
                                     
                                     compute_time = temp_tile_latency.tile_latency + merge_time + transfer_time + begin_time
-                                   
+                                   # 更新时延结果
                                     self.pipe_result_update(layer_type='conv', begin_time=begin_time, compute_time=compute_time, layer_id=layer_id,
                                                             temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time)
                                     max_time[m] = compute_time
-                                elif j == 0:
+                                elif j == 0: # 遍历输出特征图的第一列
                                     if mode == 0:
                                         if cur_multiple == 1:
                                             indata = input_channel_PE * (input_size[1] * (stride - 1) + max(kernelsize - padding,0)) * inputbit / 8
@@ -1102,6 +1113,7 @@ class Model_latency():
                                             indata = input_channel_PE * (temp_insize * (stride - 1) + kernelsize) * inputbit / 8
                                     else:
                                         if cur_multiple == 1:
+                                            # 默认运行（与第一层的意义一样）
                                             indata = input_channel_PE * stride * max(kernelsize - padding,0) * inputbit / 8
                                         elif m == 0:
                                             indata = input_channel_PE * stride * max(kernelsize - padding,0) * inputbit / 8
@@ -1124,6 +1136,7 @@ class Model_latency():
                                             max_prelayer_time = tmp_time
                                     begin_time = max(max_prelayer_time, self.pre_max_time)
                                     compute_time = temp_tile_latency.tile_latency + merge_time + transfer_time + begin_time
+                                    # 更新该层的时延结果
                                     self.pipe_result_update(layer_type='conv', begin_time=begin_time, compute_time=compute_time, layer_id=layer_id,
                                                             temp_tile_latency=temp_tile_latency, merge_time=merge_time, transfer_time=transfer_time)
                                     max_time[m] = compute_time
@@ -1131,7 +1144,7 @@ class Model_latency():
                                 else:
                                     if mode == 0:
                                         indata = input_channel_PE * stride * inputbit / 8
-                                    else:
+                                    else:  # 默认运行
                                         if i ==0:
                                             indata = input_channel_PE * stride * kernelsize * inputbit / 8
                                         else:
@@ -1161,7 +1174,7 @@ class Model_latency():
                                     max_time[m] = compute_time
                                     
                     
-                else:
+                else:  # 非卷积层
                     cur_multiple = self.multiple[layer_id]
                     assert cur_multiple == 1, "Only the conv layer can be multipled"
                     if layer_dict['type'] == 'fc':
@@ -1372,6 +1385,7 @@ class Model_latency():
             temp_runtime = 0
             for l in range(len(self.compute_interval[layer_id])):
                 temp_runtime += (self.compute_interval[layer_id][l][1] - self.compute_interval[layer_id][l][0])
+            # 把每一层的各类时延相加，下面的列表长度均为层数
             self.occupancy.append(temp_runtime / (max(self.finish_time[layer_id]) - min(self.begin_time[layer_id])))
             self.total_buffer_latency.append(sum(self.buffer_latency[layer_id]))
             self.total_computing_latency.append(sum(self.computing_latency[layer_id]))

@@ -104,7 +104,7 @@ class TrainTestInterface(object):
             #linqiushi modified
             self.net.load_change_weights(torch.load(weights_file, map_location=self.device))
             #linqiushi above
-    def origin_evaluate(self, method = 'SINGLE_FIX_TEST', adc_action = 'SCALE'):
+    def origin_evaluate(self, method = 'SINGLE_FIX_TEST', adc_action = 'SCALE'): 
         if self.test_loader == None:
             self.test_loader = import_module(self.dataset_module).get_dataloader()[1]
         self.net.to(self.device)
@@ -214,13 +214,23 @@ class TrainTestInterface(object):
                 #linqiushi above
                     net_array.append([(layer_structure_info, None)])
                 continue
+            # layer_structure_info['row_split_num'] = len(self.sublayer_list)
+            # layer_structure_info['weight_bit_split_part']这里默认为8（由于交叉条极性为2）
             assert len(layer_bit_weights.keys()) == layer_structure_info['row_split_num'] * layer_structure_info['weight_bit_split_part'] * self.hardware_config['xbar_polarity']
+            # print(layer_structure_info['row_split_num'])
             # split
             if self.hardware_config['xbar_polarity'] == 2:
                 for i in range(layer_structure_info['row_split_num']):
                     for j in range(layer_structure_info['weight_bit_split_part']):
+                        # if i == 0 and j == 0:
+                            # print(type(layer_bit_weights[f'split{i}_weight{j}_positive']))  # numpy.ndarray                          
+                            # print("before:", layer_bit_weights[f'split{i}_weight{j}_positive'].shape)
                         layer_bit_weights[f'split{i}_weight{j}_positive'] = mysplit(layer_bit_weights[f'split{i}_weight{j}_positive'], self.xbar_column)
                         layer_bit_weights[f'split{i}_weight{j}_negative'] = mysplit(layer_bit_weights[f'split{i}_weight{j}_negative'], self.xbar_column)
+                        # if i == 0 and j == 0:
+                        #     print("after:", len(layer_bit_weights[f'split{i}_weight{j}_positive']))
+                        #     print(len(layer_bit_weights[f'split{i}_weight{j}_positive'][0]))
+                        #     print(layer_bit_weights[f'split{i}_weight{j}_positive'][0].shape)
             else:
                 for i in range(layer_structure_info['row_split_num']):
                     for j in range(layer_structure_info['weight_bit_split_part']):
@@ -243,6 +253,7 @@ class TrainTestInterface(object):
                         for s in range(layer_structure_info['weight_bit_split_part']):
                             pe_array.append(layer_bit_weights[f'split{i}_weight{s}'][j].astype(np.int8))
                         xbar_array.append(pe_array)
+            # print(len(xbar_array))
                 
             # store in xbar_array
             total_array = []
@@ -276,6 +287,7 @@ def mysplit(array, length):
 if __name__ == '__main__':
     test_SimConfig_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "SimConfig.ini")
     __TestInterface = TrainTestInterface('vgg8', 'MNSIM.Interface.cifar10', test_SimConfig_path, '../../cifar10_vgg8_params.pth', '7')
-    print(__TestInterface.origin_evaluate(method='SINGLE_FIX_TEST'))
-    print(__TestInterface.set_net_bits_evaluate(__TestInterface.get_net_bits()))
+    # print(__TestInterface.origin_evaluate(method='SINGLE_FIX_TEST'))
+    # print(__TestInterface.set_net_bits_evaluate(__TestInterface.get_net_bits()))
     structure_info = __TestInterface.get_structure()
+    # print(structure_info)

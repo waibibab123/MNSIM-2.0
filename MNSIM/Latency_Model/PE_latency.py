@@ -14,18 +14,18 @@ from MNSIM.Interface.interface import *
 
 class PE_latency_analysis():
     def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, inprecision = 8, default_buf_size = 16):
-        # read_row: activated WL number in crossbar
-        # read_column: activated BL number in crossbar
-        # indata: volume of input data (for PE) (Byte)
-        # rdata: volume of data from buffer to iReg (Byte)
-        # outdata: volume of output data (for PE) (Byte)
-        # inprecision: input data precision of each Xbar
-        # default_buf_size: default input buffer size (KB)
+        # read_row: activated WL number in crossbar xbar中激活的字线数量  此处理想化设计为xbar使用的最大行数
+        # read_column: activated BL number in crossbar xbar中激活的位线数量 此处理想化设计为xbar使用的最大列数
+        # indata: volume of input data (for PE) (Byte) PE输入数据的容量（单位：字节）
+        # rdata: volume of data from buffer to iReg (Byte) 从缓冲区向输入寄存器传输的数据容量（单位：字节）
+        # outdata: volume of output data (for PE) (Byte)  PE输出数据的容量（单位：字节）
+        # inprecision: input data precision of each Xbar  每一个xbar的输入精度
+        # default_buf_size: default input buffer size (KB)  输入缓冲区的默认内存（单位：千字节）
         PEl_config = cp.ConfigParser()
         PEl_config.read(SimConfig_path, encoding='UTF-8')
-        self.inbuf = buffer(SimConfig_path=SimConfig_path, buf_level=1, default_buf_size=default_buf_size)
+        self.inbuf = buffer(SimConfig_path=SimConfig_path, buf_level=1, default_buf_size=default_buf_size) # 输入缓冲区
         self.PE = ProcessElement(SimConfig_path)
-        self.inbuf.calculate_buf_write_latency(indata)
+        self.inbuf.calculate_buf_write_latency(indata) # 计算写入时延
         self.PE_buf_wlatency = self.inbuf.buf_wlatency
           # unit: ns
         self.digital_period = 1/float(PEl_config.get('Digital module', 'Digital_Frequency'))*1e3
@@ -88,6 +88,7 @@ class PE_latency_analysis():
         self.inbuf.calculate_buf_read_latency(rdata)
         self.PE_buf_rlatency = self.inbuf.buf_rlatency
         self.PE_latency = self.PE_buf_wlatency + self.PE_buf_rlatency + self.computing_latency + self.PE_digital_latency
+        # 总PE时延 = 输入缓冲区的写入/读取延迟 + 计算延迟（DAC\Xbar\DAC）+ 数字电路延迟（寄存器\移位计算\加法器等)
 
 
 if __name__ == '__main__':

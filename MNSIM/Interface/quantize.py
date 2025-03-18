@@ -220,8 +220,10 @@ class QuantizeLayer(nn.Module):
                     output.add_(self.sublayer_list[i](input_list[i]))
             return output
         # fix training
-        if METHOD == 'FIX_TRAIN':
+        if METHOD == 'FIX_TRAIN':  # MNSIM中默认使用的方式
            
+            # 沿输入通道的方向将该层的若干子权重进行拼接，拼接后的weight为该层完整权重
+            # shape：(out_channel, in_channel, height, weight)
             weight=torch.cat([l.weight for l in self.sublayer_list], dim = 1)
             
             # quantize weight
@@ -240,7 +242,7 @@ class QuantizeLayer(nn.Module):
             self.bit_scale_list.data[1, 1] = last_weight_scale
             if self.layer_config['type'] == 'conv':
                 
-                if self.layer_config['depthwise']=='normal':
+                if self.layer_config['depthwise']=='normal': # 默认使用
                     output = F.conv2d(
                         input, weight, None, \
                         self.layer_config['stride'], self.layer_config['padding'], 1, 1
@@ -292,8 +294,8 @@ class QuantizeLayer(nn.Module):
         
         return Pout_equal
     def get_bit_weights(self):
-        weight_bit = self.quantize_config['weight_bit']
-        weight_scale = self.bit_scale_list[1, 1].item()
+        weight_bit = self.quantize_config['weight_bit'] #default:9
+        weight_scale = self.bit_scale_list[1, 1].item() 
         assert weight_bit != 0 and weight_scale != 0, f'weight bit and scale should be given by the params'
         bit_weights = collections.OrderedDict()
         for layer_num, l in enumerate(self.sublayer_list):
@@ -306,7 +308,7 @@ class QuantizeLayer(nn.Module):
                 weight_bit_split_part = math.ceil(weight_bit / self.hardware_config['weight_bit'])
             # transfer part weight
             thres = 2 ** (weight_bit - 1) - 1
-            weight_digit = torch.clamp(torch.round(l.weight / weight_scale), 0 - thres, thres - 0)
+            weight_digit = torch.clamp(torch.round(l.weight / weight_scale), 0 - thres, thres - 0)# numpy.ndarray
             # split weight into bit
             sign_weight = torch.sign(weight_digit)
             weight_digit = torch.abs(weight_digit)
@@ -331,7 +333,11 @@ class QuantizeLayer(nn.Module):
         output = None
         output_final=None
         
-        input_list = torch.split(input, self.split_input, dim = 1)
+        # 将输入按照输入通道数的维度拆分成若干个子输入
+        # 拆分后的每一个子输入的输入通道数为self.split_input
+        # self.split_input是每一个xbar_column所能存放的卷积核通道数
+        # len(input_list) == len(self.sublayer_list)
+        input_list = torch.split(input, self.split_input, dim = 1) 
             # self.split_input = xbar_size
         
         scale = self.last_value.item()
@@ -339,10 +345,13 @@ class QuantizeLayer(nn.Module):
         # weight_bit = int(self.bit_scale_list[1, 0].item())
         weight_bit = self.quantize_config['weight_bit']
         weight_scale = self.bit_scale_list[1, 1].item()
-        for layer_num, l in enumerate(self.sublayer_list):
+
+        # 遍历当前量化层的子层
+        # 每个子层包含了self.split_input个输入通道
+        for layer_num, l in enumerate(self.sublayer_list):  
             # assert (weight_bit - 1) % self.hardware_config['weight_bit'] == 0, generate weight cycle
             if self.hardware_config['xbar_polarity'] == 2:
-                weight_bit_split_part = math.ceil((weight_bit - 1) / self.hardware_config['weight_bit'])
+                weight_bit_split_part = math.ceil((weight_bit - 1) / self.hardware_config['weight_bit']) # 默认为8
                     # weight_bit-1: pos and neg xbar, split weights into multiple part
             else:
                 weight_bit_split_part = math.ceil(weight_bit / self.hardware_config['weight_bit'])
@@ -352,31 +361,41 @@ class QuantizeLayer(nn.Module):
             step = 2 ** self.hardware_config['weight_bit']
             for j in range(weight_bit_split_part):
                 if self.hardware_config['xbar_polarity'] == 2:
+                    # 拿到真正的权重值（正权重阵列减去负权重阵列）
                     tmp = bit_weights[f'split{layer_num}_weight{j}_positive'] - bit_weights[f'split{layer_num}_weight{j}_negative']
                 else:
                     tmp = bit_weights[f'split{layer_num}_weight{j}']
+                
+                # 将numpy数组tmp转换为pytorch张量
                 tmp = torch.from_numpy(tmp)
+                # 将张量移动到指定的设备上，并使其数据类型与输入张量一致
                 weight_container.append(tmp.to(device = input.device, dtype = input.dtype))
                 base = base * step
-            activation_in_bit = int(self.bit_scale_list[0, 0].item())
+            activation_in_bit = int(self.bit_scale_list[0, 0].item()) # 默认：9
             
             activation_in_scale = self.bit_scale_list[0, 1].item()
             thres = 2 ** (activation_in_bit - 1) - 1
             activation_in_digit = torch.clamp(torch.round(input_list[layer_num] / activation_in_scale), 0 - thres, thres - 0)
             # assert (activation_in_bit - 1) % self.hardware_config['input_bit'] == 0, generate activation_in cycle
+            # 默认：self.hardware_config['input_bit'] = 1
+            # 计算每一个输入所需的周期数 8 / 1 = 8 
             activation_in_cycle = math.ceil((activation_in_bit - 1) / self.hardware_config['input_bit'])
             # split activation into bit
-            sign_activation_in = torch.sign(activation_in_digit)
-            activation_in_digit = torch.abs(activation_in_digit)
+            sign_activation_in = torch.sign(activation_in_digit) # 输入符号位
+            activation_in_digit = torch.abs(activation_in_digit) # 输入绝对值
             base = 1
-            step = 2 ** self.hardware_config['input_bit']
+            step = 2 ** self.hardware_config['input_bit'] # 默认：1
             activation_in_container = []
+            # 将输入的每“self.hardware_config['input_bit']”位保存起来（含符号）
             for i in range(activation_in_cycle):
                 tmp = torch.fmod(activation_in_digit, base * step) -  torch.fmod(activation_in_digit, base)
                 activation_in_container.append(torch.mul(sign_activation_in, tmp) / base)
                 base = base * step
+
             # calculation and add
+            # self.quantize_config['point_shift'] 默认为 -2
             point_shift = math.floor(self.quantize_config['point_shift'] + 0.5 * math.log2(len(self.sublayer_list)))
+            # ADC最小的分辨率
             Q = self.hardware_config['ADC_quantize_bit'] + self.layer_config['extend_ADC_bitwidth']
             for i in range(activation_in_cycle):
                 for j in range(weight_bit_split_part):

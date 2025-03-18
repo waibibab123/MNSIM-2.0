@@ -48,6 +48,7 @@ class tile_latency_analysis(PE_latency_analysis):
         self.tile_buf_wlatency = self.outbuf.buf_wlatency
          # do not consider
         self.tile_latency = self.PE_latency + self.jointmodule_latency + self.transfer_latency + self.tile_buf_wlatency
+        # 总延迟 = PE延迟 + 联合模块延迟 + 数据传输延迟 + tile输出缓冲区写入延迟
     def update_tile_latency(self, indata = 0, rdata = 0):
         self.update_PE_latency(indata=indata,rdata=rdata)
         self.tile_latency = self.PE_latency + self.jointmodule_latency + self.transfer_latency + self.tile_buf_wlatency

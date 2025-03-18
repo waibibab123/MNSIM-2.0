@@ -207,52 +207,53 @@ def generate_zigzag_matrix(row, column):
 
 class TCG():
     def __init__(self, NetStruct, SimConfig_path, multiple=None):
+        # NetStruct: Interface.py的get_structure函数返回的net_array
         # NetStruct: layer structure, SimConfig_path: Hardware config path, multiple: allocate more resources for some layers (i.e., duplicate)
         TCG_config = cp.ConfigParser()
         TCG_config.read(SimConfig_path, encoding='UTF-8')
         if multiple is None:
-            multiple = [1] * len(NetStruct)
-        self.tile = tile(SimConfig_path)
-        self.net = NetStruct
-        self.layer_num = len(self.net)
-        self.layer_tileinfo = []
-        self.xbar_polarity = int(TCG_config.get('Process element level', 'Xbar_Polarity'))
-        self.tile_connection = int(TCG_config.get('Architecture level', 'Tile_Connection'))
-        self.tile_num = list(map(int, TCG_config.get('Architecture level', 'Tile_Num').split(',')))
-        if self.tile_num[0] == 0:
+            multiple = [1] * len(NetStruct) # 量化层数量  
+        self.tile = tile(SimConfig_path) # tile
+        self.net = NetStruct # net_array
+        self.layer_num = len(self.net) # 量化层数量
+        self.layer_tileinfo = [] # 每一个量化层的tile信息列表
+        self.xbar_polarity = int(TCG_config.get('Process element level', 'Xbar_Polarity')) # 默认：2
+        self.tile_connection = int(TCG_config.get('Architecture level', 'Tile_Connection')) # 默认：2
+        self.tile_num = list(map(int, TCG_config.get('Architecture level', 'Tile_Num').split(','))) # 默认：(64, 64)
+        if self.tile_num[0] == 0: # 默认的tile数量是8 * 8
             self.tile_num[0] = 8
             self.tile_num[1] = 8
         assert self.tile_num[0] > 0, "Tile number < 0"
         assert self.tile_num[1] > 0, "Tile number < 0"
-        self.tile_total_num = self.tile_num[0] * self.tile_num[1]
-        self.mapping_order = -1 * np.ones(self.tile_num)
-        self.mapping_result = -1 * np.ones(self.tile_num)
+        self.tile_total_num = self.tile_num[0] * self.tile_num[1] # tile的总数量
+        self.mapping_order = -1 * np.ones(self.tile_num) # 映射到tile上的顺序
+        self.mapping_result = -1 * np.ones(self.tile_num) 
         start_tileid = 0
             # the start Tile id
-        self.max_inbuf_size = 0
-            # the maximum input buffer size of each PE, unit: KB
+        self.max_inbuf_size = 0   
+            # the maximum input buffer size of each PE, unit: KB   每一个PE的最大输入缓冲区内存，单位：KB
         self.max_outbuf_size = 0
-            # the maximum output buffer size of each tile, unit: KB
+            # the maximum output buffer size of each tile, unit: KB   每一个tile的最大输出缓冲区的内存，单位：KB
         self.global_buf_size = 0
-            # the global buffer size for accumulator
+            # the global buffer size for accumulator   全局缓冲区的内存
         self.global_data_size = 0
         self.global_adder_num = 0
-            # the global adder number in accumulator
+            # the global adder number in accumulator      
         self.global_multiplier_num=0
         self.global_adder_bitwidth = 8
         self.global_multiplier_bitwidth=8
-        num = []
+        num = []    
             # track PE number of each layer 
-        total_xbar_num = 0
+        total_xbar_num = 0     # xbar的总数
         for layer_id in range(self.layer_num):
-            layer_dict = self.net[layer_id][0][0]
+            layer_dict = self.net[layer_id][0][0]  # 编号为layer_id的量化层的第0个tile上的层信息
             tmp_tileinfo = collections.OrderedDict()
             layer_type = layer_dict['type']
             if self.xbar_polarity == 1:
                 weight_precision = int(layer_dict['Weightbit'])
             else:
                 assert self.xbar_polarity == 2, "Crossbar polarity must be 1 or 2"
-                weight_precision = int(layer_dict['Weightbit']) - 1
+                weight_precision = int(layer_dict['Weightbit']) - 1 # 来自network.py的get_net，默认weight_bit为9，计算后为8
             tmp_tileinfo['startid'] = start_tileid
             input_size = 0
             inputchannel = 0
@@ -263,33 +264,34 @@ class TCG():
             if layer_type == 'conv':
                 tmp_tileinfo['type'] = 'conv'
                 tmp_tileinfo['mx'] = math.ceil(weight_precision / self.tile.group_num) * math.ceil(int(layer_dict['Outputchannel']) / self.tile.xbar_column)
-                    # mx: PE number in x-axis
+                    # mx: PE number in x-axis  x轴方向上的所需的PE数量
+                    # self.tile.group_num PE中的交叉条组数（在配置文件中配置），此处为1
                 tmp_tileinfo['my'] = math.ceil(int(layer_dict['Inputchannel']) / (self.tile.xbar_row // (int(layer_dict['Kernelsize']) ** 2)))
-                    # my: PE number in y-axis
+                    # my: PE number in y-axis  y轴方向上的所需的PE数量
                 tmp_tileinfo['max_group'] = min(weight_precision, self.tile.group_num)
-                    # max_group: maximum used groups in one PE of this layer
+                    # max_group: maximum used groups in one PE of this layer 此处默认为1
                 tmp_tileinfo['max_row'] = min((self.tile.xbar_row // (int(layer_dict['Kernelsize']) ** 2)),
                     int(layer_dict['Inputchannel'])) * (int(layer_dict['Kernelsize']) ** 2)
-                    # max_row: maximum used row in one crossbar of this layer
+                    # max_row: maximum used row in one crossbar of this layer 该层xbar使用的最大的行数
                 tmp_tileinfo['max_column'] = min(int(layer_dict['Outputchannel']), self.tile.xbar_column)
-                    # max_column: maximum used column in one crossbar of this layer
+                    # max_column: maximum used column in one crossbar of this layer 该层xbar使用的最大列数（单次计算）
                 if 'Inputindex' not in layer_dict.keys():
                     tmp_tileinfo['Inputindex'] = [-1]
                 else:
                     tmp_tileinfo['Inputindex'] = list(map(int, layer_dict['Inputindex']))
-                    # Inputindex: the relative index of the input layers of this layer
+                    # Inputindex: the relative index of the input layers of this layer  该层输入层的相对索引
                 if 'Outputindex' not in layer_dict.keys():
                     tmp_tileinfo['Outputindex'] = [1]
                 else:
                     tmp_tileinfo['Outputindex'] = list(map(int, layer_dict['Outputindex']))
-                    # Outputindex: the relative index of the output layers of this layer
+                    # Outputindex: the relative index of the output layers of this layer  该层输出层的相对索引
                 if len(tmp_tileinfo['Outputindex']) == 1:
                     tmp_tileinfo['is_branchin'] = -1
                 else:
                     tmp_tileinfo['is_branchin'] = 1
-                    # is_branchin: if this layer is the input layer of a branch
+                    # is_branchin: if this layer is the input layer of a branch  该层是否是分支的输入层
                 tmp_tileinfo['is_branchout'] = 1
-                    # is_branchout: if this layer is the output layer of a branch (the next layer is element_sum)
+                    # is_branchout: if this layer is the output layer of a branch (the next layer is element_sum)  
                 for i in tmp_tileinfo['Outputindex']:
                     tmp_layer = self.net[i+layer_id][0][0]
                     if tmp_layer['type'] != 'element_sum' and tmp_layer['type'] != 'element_multiply':
@@ -298,6 +300,7 @@ class TCG():
                 input_size_list = list(map(int, layer_dict['Inputsize']))
                 input_size = input_size_list[0] * input_size_list[1]
                 inputchannel = int(layer_dict['Inputchannel'])
+                #输入特征图按照滑动窗口的第一行的数据内存，单位：字节
                 data_inbuf = input_size_list[1] * int(layer_dict['Kernelsize']) * inputchannel * int(layer_dict['Inputbit'])/8
                     # assume using the line buffer structure
                 outputchannel = int(layer_dict['Outputchannel'])
@@ -457,17 +460,22 @@ class TCG():
                 if tmp_tileinfo['bit_branchout']>self.global_adder_bitwidth:
                     self.global_adder_bitwidth = tmp_tileinfo['bit_branchout']
             if layer_type == 'conv' or layer_type == 'fc':
-                total_xbar_num += tmp_tileinfo['mx'] * tmp_tileinfo['my'] * multiple[layer_id]
-            tmp_tileinfo['PEnum'] = tmp_tileinfo['mx'] * tmp_tileinfo['my'] * multiple[layer_id]
-            num.append(tmp_tileinfo['PEnum'])
-            tmp_tileinfo['tilenum'] = math.ceil(tmp_tileinfo['PEnum'] / self.tile.tile_PE_total_num)
+                total_xbar_num += tmp_tileinfo['mx'] * tmp_tileinfo['my'] * multiple[layer_id]  # 需要的xbar总数量（一对正负xbar视为一个）
+            tmp_tileinfo['PEnum'] = tmp_tileinfo['mx'] * tmp_tileinfo['my'] * multiple[layer_id] # 需要的PE的数量
+            num.append(tmp_tileinfo['PEnum']) # 该层所需的PE的数量
+            tmp_tileinfo['tilenum'] = math.ceil(tmp_tileinfo['PEnum'] / self.tile.tile_PE_total_num) # 该层需要的tile的总数量
             tmp_tileinfo['max_PE'] = min(tmp_tileinfo['PEnum'], self.tile.tile_PE_total_num)
-            start_tileid += tmp_tileinfo['tilenum']
-            self.layer_tileinfo.append(tmp_tileinfo)
+            start_tileid += tmp_tileinfo['tilenum'] # 更新下一量化层映射的tile_id
+            self.layer_tileinfo.append(tmp_tileinfo) # 在tile信息列表中添加该层的tile信息
 
             inputbit = int(layer_dict['Inputbit'])
             if tmp_tileinfo['type'] == 'conv' or tmp_tileinfo['type'] == 'fc':
+                # pe的输入缓存，单位KB
+                # 如果该层是卷积层
+                # data_inbuf = input_size_list[1] * int(layer_dict['Kernelsize']) * inputchannel * int(layer_dict['Inputbit'])/8
                 tmp_inbuf_size = math.pow(2,math.ceil(math.log(data_inbuf / tmp_tileinfo['PEnum'],2)))/1024
+                # tile的输出缓存，单位KB
+                # data_outbuf = outputchannel*int(layer_dict['outputbit'])/8
                 tmp_outbuf_size = math.pow(2,math.ceil(math.log(data_outbuf*2 / tmp_tileinfo['tilenum'],2)))/1024 # 2: ping-pong
             else:
                 tmp_inbuf_size = 0
@@ -491,7 +499,7 @@ class TCG():
             self.mapping_order = generate_normal_matrix(self.mapping_order.shape[0], self.mapping_order.shape[1])
         elif self.tile_connection == 1:
             self.mapping_order = generate_snake_matrix(self.mapping_order.shape[0], self.mapping_order.shape[1])
-        elif self.tile_connection == 2:
+        elif self.tile_connection == 2: # 默认使用
             self.mapping_order = generate_hui_matrix(self.mapping_order.shape[0], self.mapping_order.shape[1])
         elif self.tile_connection == 3:
             self.mapping_order = generate_zigzag_matrix(self.mapping_order.shape[0], self.mapping_order.shape[1])
@@ -514,7 +522,8 @@ class TCG():
     def calculate_transfer_distance(self):
         for layer_id in range(self.layer_num - 1):
             # Determine the aggregate node for layer 0~N-1
-            if self.layer_tileinfo[layer_id]['is_branchout'] == 1:
+            if self.layer_tileinfo[layer_id]['is_branchout'] == 1: 
+                # 每一层选择层内距离和层间距离最小的tile作为聚合结点
                 # for the layer which is a output layer of one branch and the next layer is element_sum
                 if self.layer_tileinfo[layer_id]['type'] in ['conv', 'pooling', 'fc']:
                     src_pos = np.argwhere(self.mapping_result == layer_id)
@@ -604,9 +613,9 @@ class TCG():
 if __name__ == '__main__':
     test_SimConfig_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "SimConfig.ini")
     test_weights_file_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())),
-                                          "vgg8_params.pth")
+                                          "cifar10_vgg8_params.pth")
 
-    __TestInterface = TrainTestInterface('vgg8_128_9', 'MNSIM.Interface.cifar10', test_SimConfig_path,
+    __TestInterface = TrainTestInterface('vgg8', 'MNSIM.Interface.cifar10', test_SimConfig_path,
                                          test_weights_file_path, 'cpu')
     structure_file = __TestInterface.get_structure()
 
