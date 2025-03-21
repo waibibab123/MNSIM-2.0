@@ -609,6 +609,69 @@ class TCG():
                 self.transLayer_distance[0][self.layer_num - 1] = 0
         # self.total_distance = sum(sum(self.trans_time * (self.inLayer_distance + self.transLayer_distance)))
 
+# 仅考虑Group_Num=1且Xbar_Polarity=2的情况
+class TCG_OU(TCG):
+    def __init__(self, NetStruct, SimConfig_path, multiple=None):
+        super().__init__(NetStruct, SimConfig_path, multiple)
+        # # 权重组织分析
+        # print(len(self.net)) # 层数   self.net：整个网络权重
+        # print(len(self.net[0])) # 第0层的tile数量   self.net[0]：第0层所有tile
+        # # self.net[0][0]：第0层的第0个tile（是一个元组，第一个元素self.net[0][0][0]是该层的信息，第二个元素self.net[0][0][1]是该tile的所有PE）
+        # print(len(self.net[0][0][1])) # 第0层的第0个tile中的PE数量 self.net[0][0][1]：第0层第0个tile中的所有PE
+        # print(len(self.net[0][0][1][0])) # 第0层的第0个tile中的第0个PE中含有的xbar组数（此处等于权重比特数8,应该作修改） self.net[0][0][1][0]：第0层第0个tile的第0个PE
+        # # print(self.net[0][0][1][0][0]) 第0层的第0个tile中的第0个PE中的第0位权重值，长度为2，第一个元素为正权重，第二个元素为负权重
+        # print(self.net[0][0][1][0][0][0].shape) # 第0层的第0个tile中的第0个PE中的第0位的正权重的形状 (列，行)(128,27)
+
+        for layer_id in range(self.layer_num):
+            layer_dict = self.net[layer_id][0][0]
+            layer_type = layer_dict['type']
+            inputbit = int(layer_dict['Inputbit'])
+            max_ou_cycle = 0
+            ou_cycle_sum = 0
+            pe_num = 0 # 该层pe数量
+
+            # 每一个xbar的OU计算次数组织 ou_cycle_array[0]:该层第0个tile次数组织
+            # ou_cycle_array[0][0]：该层第0个tile的第0个PE次数组织
+            # ou_cycle_array[0][0][0]：该层第0个tile的第0个PE的正权重xbar上的计算次数
+            # ou_cycle_array[0][0][1]：该层第1个tile的第1个PE的负权重xbar上的计算次数
+            ou_cycle_array = [] # 长度为tile数
+            
+            if layer_type == 'conv' or layer_type == 'fc':
+                for tile_id in range(len(self.net[layer_id])):
+                    tile_ou_cycle = [] # 长度为该tile的PE数
+                    for pe_id in range(len(self.net[layer_id][tile_id][1])):
+                        pe_num += 8
+                        for group_id in range(len(self.net[layer_id][tile_id][1][pe_id])):
+                            pe_ou_cycle = [] # 长度为2
+                            for sign_id in range(len(self.net[layer_id][tile_id][1][pe_id][group_id])):
+                                xbar_weight = self.net[layer_id][tile_id][1][pe_id][group_id][sign_id]
+                                xbar_ou_cycle = inputbit * math.ceil(xbar_weight.shape[1] / self.tile.ou_row) * \
+                                        math.ceil(xbar_weight.shape[0] / self.tile.ou_column)
+                                if xbar_ou_cycle > max_ou_cycle:
+                                    max_ou_cycle = xbar_ou_cycle
+                                pe_ou_cycle.append(xbar_ou_cycle)
+                                ou_cycle_sum += xbar_ou_cycle
+                            tile_ou_cycle.append(pe_ou_cycle)
+                    ou_cycle_array.append(tile_ou_cycle)
+                
+                self.layer_tileinfo[layer_id]['max_OU_cycle'] = max_ou_cycle #最大ou计算次数的xbar的ou计算次数（以xbar为单位）
+                self.layer_tileinfo[layer_id]['OU_cycle_array'] = ou_cycle_array
+                self.layer_tileinfo[layer_id]['OU_cycle_sum'] = ou_cycle_sum
+                self.layer_tileinfo[layer_id]['PE_num'] = pe_num
+                self.layer_tileinfo[layer_id]['avg_OU_cycle_PE'] = ou_cycle_sum / pe_num #pe的平均ou计算次数（以pe为单位）
+
+        # OU计算次数列表的测试
+        # print(len(self.layer_tileinfo[0]['OU_cycle_array'])) # 第0层的tile数
+        # print(len(self.layer_tileinfo[0]['OU_cycle_array'][0])) # 第0层中第0个tile上的PE数
+        # print(len(self.layer_tileinfo[0]['OU_cycle_array'][0][0])) #2
+        # print(self.layer_tileinfo[0]['OU_cycle_array'][0][0][0]) # 第0层中第0个tile上的正权重阵列所需要的OU计算次数
+        # print(self.layer_tileinfo[0]['max_OU_cycle']) # 第0层中最大的OU计算次数的pe的OU计算次数
+
+        #平均OU计算次数、OU计算次数和、每层pe数测试
+        # print(self.layer_tileinfo[0]['PE_num'])
+        # print(self.layer_tileinfo[0]['OU_cycle_sum'])
+        # print(self.layer_tileinfo[0]['avg_OU_cycle_PE'])
+       
 
 if __name__ == '__main__':
     test_SimConfig_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "SimConfig.ini")
@@ -619,7 +682,8 @@ if __name__ == '__main__':
                                          test_weights_file_path, 'cpu')
     structure_file = __TestInterface.get_structure()
 
-    test = TCG(structure_file, test_SimConfig_path)
+    # test = TCG(structure_file, test_SimConfig_path)
+    test = TCG_OU(structure_file, test_SimConfig_path)
     test.mapping_net()
     test.calculate_transfer_distance()
     # print(test.total_distance)

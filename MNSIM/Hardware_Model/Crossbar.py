@@ -17,6 +17,9 @@ class crossbar(device):
 		self.xbar_size = list(map(int, xbar_config.get('Crossbar level', 'Xbar_Size').split(',')))
 		self.xbar_row = int(self.xbar_size[0])
 		self.xbar_column = int(self.xbar_size[1])
+		self.ou_size = list(map(int, xbar_config.get('Crossbar level', 'OU_Size').split(',')))
+		self.ou_row = int(self.ou_size[0])
+		self.ou_column = int(self.ou_size[1])
 		self.subarray_size = int(xbar_config.get('Crossbar level', 'Subarray_Size'))
 		assert self.xbar_row % self.subarray_size == 0, "The crossbar size must be divisible by the subarray size"
 		self.subarray_num = self.xbar_row/self.subarray_size

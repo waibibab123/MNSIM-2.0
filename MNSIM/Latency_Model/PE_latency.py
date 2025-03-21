@@ -91,6 +91,28 @@ class PE_latency_analysis():
         # 总PE时延 = 输入缓冲区的写入/读取延迟 + 计算延迟（DAC\Xbar\DAC）+ 数字电路延迟（寄存器\移位计算\加法器等)
 
 
+class PE_latency_analysis_ou(PE_latency_analysis):
+    def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, inprecision=8, default_buf_size=16, ou_cycle=1):
+        super().__init__(SimConfig_path, read_row, read_column, indata, rdata, inprecision, default_buf_size)
+        # self.computing_latency的组成部分
+        self.DAC_latency *= ou_cycle 
+        self.xbar_latency *= ou_cycle
+        self.ADC_latency *= ou_cycle
+        # self.PE_digital_latency的组成部分
+        self.iReg_latency *= ou_cycle
+        self.shiftreg_latency *= ou_cycle
+        self.input_demux_latency *= ou_cycle
+        self.adder_latency *= ou_cycle
+        self.output_mux_latency *= ou_cycle
+        self.oReg_latency *= ou_cycle
+        # 重算self.computing_latency
+        self.computing_latency = self.DAC_latency+self.xbar_latency+self.ADC_latency
+        # 重算self.PE_digital_latency
+        self.PE_digital_latency = self.iReg_latency + self.shiftreg_latency + self.input_demux_latency + self.adder_latency + self.output_mux_latency + self.oReg_latency
+        # 重算self.PE_latency
+        self.PE_latency = self.PE_buf_wlatency + self.PE_buf_rlatency + self.computing_latency + self.PE_digital_latency
+
+
 if __name__ == '__main__':
     test_SimConfig_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "SimConfig.ini")
     _test = PE_latency_analysis(test_SimConfig_path, 100,100,32,96)
