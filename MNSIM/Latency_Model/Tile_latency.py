@@ -55,8 +55,8 @@ class tile_latency_analysis(PE_latency_analysis):
 
 
 class tile_latency_analysis_ou(PE_latency_analysis_ou):
-    def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, inprecision = 8,
-                 PE_num=0, default_inbuf_size = 16, default_outbuf_size =4, ou_cycle=1):
+    def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, max_column=0,inprecision = 8,
+                 PE_num=0, default_inbuf_size = 16, default_outbuf_size =4, ou_num=1):
         # read_row: activated WL number in crossbar
         # read_column: activated BL number in crossbar
         # indata: volume of input data (for PE) (Byte)
@@ -67,7 +67,7 @@ class tile_latency_analysis_ou(PE_latency_analysis_ou):
         # default_inbuf_size: the default PE-level input buffer size (unit: KB)
         # default_outbuf_size: the default Tile-level output buffer size (unit: KB)
         PE_latency_analysis_ou.__init__(self, SimConfig_path, read_row=read_row, read_column=read_column,
-                                     indata=indata, rdata=rdata, inprecision=inprecision, default_buf_size = default_inbuf_size, ou_cycle=ou_cycle)
+                                     indata=indata, rdata=rdata, inprecision=inprecision, default_buf_size = default_inbuf_size, ou_num=ou_num)
         tilel_config = cp.ConfigParser()
         tilel_config.read(SimConfig_path, encoding='UTF-8')
         self.intra_tile_bandwidth = float(tilel_config.get('Tile level', 'Intra_Tile_Bandwidth'))
@@ -84,8 +84,8 @@ class tile_latency_analysis_ou(PE_latency_analysis_ou):
         total_level = math.ceil(math.log2(self.tile_PE_total_num))
         self.jointmodule_latency = merge_time * self.digital_period
         self.transfer_latency = (total_level*(self.PE.ADC_precision+merge_time)-merge_time*(merge_time+1)/2)\
-                                *read_column/self.intra_tile_bandwidth
-        self.outbuf.calculate_buf_write_latency(wdata=((self.PE.ADC_precision + merge_time)*read_column*PE_num/8))
+                                *max_column/self.intra_tile_bandwidth
+        self.outbuf.calculate_buf_write_latency(wdata=((self.PE.ADC_precision + merge_time)*max_column*PE_num/8))
         self.tile_buf_rlatency = 0
         self.tile_buf_wlatency = self.outbuf.buf_wlatency
          # do not consider

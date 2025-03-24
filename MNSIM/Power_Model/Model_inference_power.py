@@ -156,6 +156,12 @@ class Model_inference_power():
         self.arch_total_pooling_power = sum(self.arch_pooling_power)
     
     def model_power_output(self, module_information = 1, layer_information = 1):
+        # print(self.arch_xbar_power[0])
+        # print(self.arch_ADC_power[0])
+        # print(self.arch_DAC_power[0])
+        # print(self.arch_xbar_power[2])
+        # print(self.arch_ADC_power[2])
+        # print(self.arch_DAC_power[2])
         print("Hardware power:", self.arch_total_power, "W")
         if module_information:
             print("		crossbar power:", self.arch_total_xbar_power, "W")

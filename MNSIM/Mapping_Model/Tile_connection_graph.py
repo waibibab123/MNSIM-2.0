@@ -620,8 +620,8 @@ class TCG_OU(TCG):
         # print(len(self.net[0][0][1])) # 第0层的第0个tile中的PE数量 self.net[0][0][1]：第0层第0个tile中的所有PE
         # print(len(self.net[0][0][1][0])) # 第0层的第0个tile中的第0个PE中含有的xbar组数（此处等于权重比特数8,应该作修改） self.net[0][0][1][0]：第0层第0个tile的第0个PE
         # # print(self.net[0][0][1][0][0]) 第0层的第0个tile中的第0个PE中的第0位权重值，长度为2，第一个元素为正权重，第二个元素为负权重
-        # print(self.net[0][0][1][0][0][0].shape) # 第0层的第0个tile中的第0个PE中的第0位的正权重的形状 (列，行)(128,27)
-
+        # print(self.net[0][0][1][0][0][0].shape) # 第0层的第0个tile中的第0个PE中的第0位的正权重的形状 (列，行)(64,27)
+        # print(self.net[2][0][1][0][0][0].shape) # 第2层的第0个tile中的第0个PE中的第0位的正权重的形状 (列，行)(192,252)
         for layer_id in range(self.layer_num):
             layer_dict = self.net[layer_id][0][0]
             layer_type = layer_dict['type']
@@ -659,6 +659,7 @@ class TCG_OU(TCG):
                 self.layer_tileinfo[layer_id]['OU_cycle_sum'] = ou_cycle_sum
                 self.layer_tileinfo[layer_id]['PE_num'] = pe_num
                 self.layer_tileinfo[layer_id]['avg_OU_cycle_PE'] = ou_cycle_sum / pe_num #pe的平均ou计算次数（以pe为单位）
+                self.layer_tileinfo[layer_id]['max_OU_num'] = max_ou_cycle / inputbit #最大ou数量的xbar的ou数量（以xbar为单位）
 
         # OU计算次数列表的测试
         # print(len(self.layer_tileinfo[0]['OU_cycle_array'])) # 第0层的tile数
@@ -676,9 +677,9 @@ class TCG_OU(TCG):
 if __name__ == '__main__':
     test_SimConfig_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())), "SimConfig.ini")
     test_weights_file_path = os.path.join(os.path.dirname(os.path.dirname(os.getcwd())),
-                                          "cifar10_vgg8_params.pth")
+                                          "cifar10_alexnet_params.pth")
 
-    __TestInterface = TrainTestInterface('vgg8', 'MNSIM.Interface.cifar10', test_SimConfig_path,
+    __TestInterface = TrainTestInterface('alexnet', 'MNSIM.Interface.cifar10', test_SimConfig_path,
                                          test_weights_file_path, 'cpu')
     structure_file = __TestInterface.get_structure()
 

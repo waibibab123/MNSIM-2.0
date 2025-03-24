@@ -876,6 +876,8 @@ class Model_latency():
                 # self.graph.max_inbuf_size为一个pe的输入缓存
                 # self.graph.max.outbuf_size为一个tile的输出缓存
                 # self.graph.layer_tileinfo[layer_id]['max_PE']:当前tile使用的pe数和一个tile总共的pe数的最小值
+                # print(self.graph.layer_tileinfo[layer_id]['max_row']) 27
+                # print(self.graph.layer_tileinfo[layer_id]['max_column']) 64
                 temp_tile_latency = tile_latency_analysis(SimConfig_path=self.SimConfig_path,
                                                           read_row=self.graph.layer_tileinfo[layer_id]['max_row'],
                                                           read_column=self.graph.layer_tileinfo[layer_id]['max_column'],
@@ -1003,6 +1005,9 @@ class Model_latency():
                     outputbit = int(layer_dict['outputbit'])
                     Inputindex_list = list(map(int, layer_dict['Inputindex']))
                     inputindex = Inputindex_list[0]
+                    # if layer_id == 2:
+                    #     print(self.graph.layer_tileinfo[layer_id]['max_row'])
+                    #     print(self.graph.layer_tileinfo[layer_id]['max_column'])
                     input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2)  
                     # the input channel number each PE processes 在每个输入周期中一个PE需要处理的通道数
                     temp_tile_latency = tile_latency_analysis(SimConfig_path=self.SimConfig_path,
@@ -1436,7 +1441,8 @@ class Model_latency_ou(Model_latency):
                 inputbit = int(layer_dict['Inputbit'])  # 默认：9
                 outputbit = int(layer_dict['outputbit'])  # 默认：9
                 ou_size = list(map(int, self.graph.tile.ou_size)) # ou尺寸
-                ou_cycle = self.graph.layer_tileinfo[layer_id]['max_OU_cycle']
+                ou_num = self.graph.layer_tileinfo[layer_id]['max_OU_num']
+                # print(ou_num)
                 input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2) # 在每个输入周期一个PE需要处理的通道数
                 # the input channel number each PE processes 
                 # read_row：单次计算激活的字线
@@ -1447,11 +1453,12 @@ class Model_latency_ou(Model_latency):
                 temp_tile_latency = tile_latency_analysis_ou(SimConfig_path=self.SimConfig_path,
                                                           read_row=int(ou_size[0]),
                                                           read_column=int(ou_size[1]),
+                                                          max_column=self.graph.layer_tileinfo[layer_id]['max_column'],
                                                           indata=0, rdata=0, inprecision=inputbit,
                                                           PE_num=self.graph.layer_tileinfo[layer_id]['max_PE'],
                                                           default_inbuf_size=self.graph.max_inbuf_size,
                                                           default_outbuf_size=self.graph.max_outbuf_size,
-                                                          ou_cycle=ou_cycle
+                                                          ou_num=ou_num
                                                           ) 
                 # 此处，outputbit=inputbit，因为每个cell上存储一位权重
                 temp_tile_latency.outbuf.calculate_buf_read_latency(rdata = (self.graph.layer_tileinfo[layer_id]['max_column']*
@@ -1519,19 +1526,22 @@ class Model_latency_ou(Model_latency):
                     inputbit = int(layer_dict['Inputbit'])
                     outputbit = int(layer_dict['outputbit'])
                     ou_size = list(map(int, self.graph.tile.ou_size)) # ou尺寸
-                    ou_cycle = self.graph.layer_tileinfo[layer_id]['max_OU_cycle']
+                    ou_num = self.graph.layer_tileinfo[layer_id]['max_OU_num']
                     Inputindex_list = list(map(int, layer_dict['Inputindex']))
                     inputindex = Inputindex_list[0]
                     input_channel_PE = self.graph.layer_tileinfo[layer_id]['max_row'] / (kernelsize ** 2)  
+                    # if layer_id == 2:
+                    #     print(ou_num)
                     # the input channel number each PE processes 在每个输入周期中一个PE需要处理的通道数
                     temp_tile_latency = tile_latency_analysis_ou(SimConfig_path=self.SimConfig_path,
                                                               read_row=int(ou_size[0]),
                                                               read_column=int(ou_size[1]),
+                                                              max_column=self.graph.layer_tileinfo[layer_id]['max_column'],
                                                               indata=0, rdata=0, inprecision=inputbit,
                                                               PE_num=self.graph.layer_tileinfo[layer_id]['max_PE'],
                                                               default_inbuf_size=self.graph.max_inbuf_size,
                                                               default_outbuf_size=self.graph.max_outbuf_size,
-                                                              ou_cycle=ou_cycle
+                                                              ou_num = ou_num
                                                               )
                     temp_tile_latency.outbuf.calculate_buf_read_latency(rdata=(self.graph.layer_tileinfo[layer_id]['max_column'] *
                                outputbit * self.graph.layer_tileinfo[layer_id]['max_PE'] / 8))
@@ -1647,18 +1657,19 @@ class Model_latency_ou(Model_latency):
                         inputbit = int(layer_dict['Inputbit'])
                         outputbit = int(layer_dict['outputbit'])
                         ou_size = self.graph.tile.ou_size
-                        ou_cycle = self.graph.layer_tileinfo[layer_id]['max_OU_cycle']
+                        ou_num= self.graph.layer_tileinfo[layer_id]['max_OU_num']
                         self.layer_latency_initial()
                         indata = self.graph.layer_tileinfo[layer_id]['max_row'] * inputbit / 8
                         rdata = indata
                         temp_tile_latency = tile_latency_analysis_ou(SimConfig_path=self.SimConfig_path,
                                                                   read_row=int(ou_size[0]),
                                                                   read_column=int(ou_size[1]),
+                                                                  max_column=self.graph.layer_tileinfo[layer_id]['max_column'],
                                                                   indata=indata, rdata=rdata, inprecision=inputbit,
                                                                   PE_num=self.graph.layer_tileinfo[layer_id]['max_PE'],
                                                                   default_inbuf_size=self.graph.max_inbuf_size,
                                                                   default_outbuf_size=self.graph.max_outbuf_size,
-                                                                  ou_cycle=ou_cycle
+                                                                  ou_num = ou_num
                                                                   )
                         temp_tile_latency.update_tile_latency(indata=indata, rdata=rdata)
                         temp_tile_latency.outbuf.calculate_buf_read_latency(rdata=(self.graph.layer_tileinfo[layer_id]['max_column'] *
@@ -1884,9 +1895,9 @@ if __name__ == '__main__':
     __TestInterface = TrainTestInterface('alexnet', 'MNSIM.Interface.cifar10', test_SimConfig_path,
                                          test_weights_file_path)
     structure_file = __TestInterface.get_structure()
-    # test = Model_latency(structure_file, test_SimConfig_path)
-    test = Model_latency_ou(structure_file, test_SimConfig_path)
+    test = Model_latency(structure_file, test_SimConfig_path)
+    # test = Model_latency_ou(structure_file, test_SimConfig_path)
     tile = 0
-    # test.calculate_model_latency(mode=1)
-    test.calculate_model_latency_ou(mode=1)
+    test.calculate_model_latency(mode=1)
+    # test.calculate_model_latency_ou(mode=1)
     test.model_latency_output()

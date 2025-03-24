@@ -31,6 +31,8 @@ class PE_latency_analysis():
         self.digital_period = 1/float(PEl_config.get('Digital module', 'Digital_Frequency'))*1e3
         self.inbuf.calculate_buf_read_latency(rdata)
         self.PE_buf_rlatency = self.inbuf.buf_rlatency
+        # ADC DAC的数量均为128
+        # self.PE.DAC_precision=1
         multiple_time = math.ceil(inprecision/self.PE.DAC_precision) * math.ceil(read_row/self.PE.PE_group_DAC_num) *\
                         math.ceil(read_column/(self.PE.PE_group_ADC_num/self.PE.subarray_num))
         self.PE.calculate_xbar_read_latency()
@@ -92,19 +94,19 @@ class PE_latency_analysis():
 
 
 class PE_latency_analysis_ou(PE_latency_analysis):
-    def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, inprecision=8, default_buf_size=16, ou_cycle=1):
+    def __init__(self, SimConfig_path, read_row=0, read_column=0, indata=0, rdata=0, inprecision=8, default_buf_size=16, ou_num=1):
         super().__init__(SimConfig_path, read_row, read_column, indata, rdata, inprecision, default_buf_size)
         # self.computing_latency的组成部分
-        self.DAC_latency *= ou_cycle 
-        self.xbar_latency *= ou_cycle
-        self.ADC_latency *= ou_cycle
+        self.DAC_latency *= ou_num
+        self.xbar_latency *= ou_num
+        self.ADC_latency *= ou_num
         # self.PE_digital_latency的组成部分
-        self.iReg_latency *= ou_cycle
-        self.shiftreg_latency *= ou_cycle
-        self.input_demux_latency *= ou_cycle
-        self.adder_latency *= ou_cycle
-        self.output_mux_latency *= ou_cycle
-        self.oReg_latency *= ou_cycle
+        self.iReg_latency *= ou_num
+        self.shiftreg_latency *= ou_num
+        self.input_demux_latency *= ou_num
+        self.adder_latency *= ou_num
+        self.output_mux_latency *= ou_num
+        self.oReg_latency *= ou_num
         # 重算self.computing_latency
         self.computing_latency = self.DAC_latency+self.xbar_latency+self.ADC_latency
         # 重算self.PE_digital_latency
